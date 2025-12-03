@@ -834,27 +834,62 @@ export default function Home() {
             // and let the user long-press to save
             const newWindow = window.open('', '_blank')
             if (newWindow) {
+              // Different instructions for video vs image
+              const isVideoContent = mediaItem.is_video
+              const instructions = isVideoContent
+                ? `
+                  <div class="instructions">
+                    <p class="title">📹 Para guardar este video:</p>
+                    <p class="step"><span class="emoji">▶️</span> <strong>1. Reproduce el video</strong></p>
+                    <p class="step"><span class="emoji">⏸️</span> <strong>2. Pausa y mantén presionado</strong></p>
+                    <p class="step"><span class="emoji">📥</span> <strong>3. Selecciona "Guardar video"</strong></p>
+                    <p class="alt">O usa el botón <strong>Compartir ↗</strong> de Safari</p>
+                  </div>
+                `
+                : `
+                  <div class="instructions">
+                    <p class="step"><span class="emoji">👆</span> <strong>Mantén presionada la imagen</strong></p>
+                    <p class="step"><span class="emoji">📥</span> <strong>Selecciona "Guardar imagen"</strong></p>
+                  </div>
+                `
+
               newWindow.document.write(`
                 <!DOCTYPE html>
                 <html>
                 <head>
                   <meta name="viewport" content="width=device-width, initial-scale=1">
-                  <title>Guardar Imagen - ${filename}</title>
+                  <title>Guardar ${isVideoContent ? 'Video' : 'Imagen'} - ${filename}</title>
                   <style>
                     body { margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #000; color: #fff; text-align: center; }
-                    img, video { max-width: 100%; height: auto; border-radius: 12px; }
-                    .instructions { background: #1a1a1a; padding: 16px; border-radius: 12px; margin-bottom: 20px; }
-                    .step { margin: 8px 0; }
-                    .emoji { font-size: 1.5em; }
+                    img, video { max-width: 100%; height: auto; border-radius: 12px; margin-top: 15px; }
+                    .instructions { background: #1a1a1a; padding: 16px; border-radius: 12px; margin-bottom: 10px; }
+                    .title { font-size: 1.1em; margin-bottom: 12px; color: #ff6b6b; }
+                    .step { margin: 10px 0; }
+                    .alt { margin-top: 15px; padding-top: 15px; border-top: 1px solid #333; font-size: 0.9em; color: #888; }
+                    .emoji { font-size: 1.3em; margin-right: 5px; }
+                    .copy-btn {
+                      margin-top: 15px;
+                      padding: 12px 24px;
+                      background: linear-gradient(45deg, #405DE6, #5851DB, #833AB4, #C13584, #E1306C, #FD1D1D);
+                      border: none;
+                      border-radius: 8px;
+                      color: white;
+                      font-weight: bold;
+                      font-size: 1em;
+                      cursor: pointer;
+                    }
+                    .copy-btn:active { opacity: 0.8; }
+                    .note { margin-top: 15px; font-size: 0.8em; color: #666; }
                   </style>
                 </head>
                 <body>
-                  <div class="instructions">
-                    <p class="step"><span class="emoji">👆</span> <strong>Mantén presionada la imagen</strong></p>
-                    <p class="step"><span class="emoji">📥</span> <strong>Selecciona "Guardar imagen"</strong></p>
-                  </div>
-                  ${mediaItem.is_video
-                    ? `<video src="${blobUrl}" controls playsinline style="width:100%"></video>`
+                  ${instructions}
+                  ${isVideoContent
+                    ? `<video src="${blobUrl}" controls playsinline webkit-playsinline style="width:100%"></video>
+                       <button class="copy-btn" onclick="navigator.clipboard.writeText('${downloadUrl}').then(() => alert('Link copiado! Pégalo en Safari o en la app Atajos'))">
+                         📋 Copiar Link del Video
+                       </button>
+                       <p class="note">Si no puedes guardarlo, copia el link y usa la app <strong>Atajos</strong> de Apple</p>`
                     : `<img src="${blobUrl}" alt="${filename}" />`
                   }
                 </body>
@@ -1293,7 +1328,7 @@ export default function Home() {
           Solo funciona con posts públicos
         </p>
         <p className="mt-4 text-xs font-mono bg-gray-200 dark:bg-gray-700 inline-block px-2 py-1 rounded">
-          v1.7.0
+          v1.7.1
         </p>
       </footer>
     </div>
