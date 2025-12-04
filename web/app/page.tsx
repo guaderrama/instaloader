@@ -748,6 +748,7 @@ export default function Home() {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
   const [result, setResult] = useState<DownloadResponse | null>(null)
   const [downloadingIndex, setDownloadingIndex] = useState<number | null>(null)
 
@@ -807,43 +808,56 @@ export default function Home() {
   // Helper function to try multiple CORS proxies
   const fetchWithProxies = async (url: string): Promise<Blob | null> => {
     const proxies = [
+      // Primary proxies (most reliable for Instagram)
       `https://corsproxy.io/?${encodeURIComponent(url)}`,
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
       `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+      // Secondary proxies
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
       `https://corsproxy.org/?${encodeURIComponent(url)}`,
+      // Additional fallbacks
+      `https://thingproxy.freeboard.io/fetch/${url}`,
+      `https://cors-anywhere.herokuapp.com/${url}`,
     ]
 
     for (const proxyUrl of proxies) {
       try {
-        console.log('[DOWNLOAD] Trying proxy:', proxyUrl.split('?')[0])
+        console.log('[DOWNLOAD] Trying proxy:', proxyUrl.split(/[/?]/)[2])
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 15000)
+        const timeoutId = setTimeout(() => controller.abort(), 12000)
 
         const response = await fetch(proxyUrl, {
           signal: controller.signal,
           headers: {
-            'Accept': 'image/*, video/*',
+            'Accept': 'image/*, video/*, */*',
+            'Origin': window.location.origin,
           }
         })
         clearTimeout(timeoutId)
 
         if (response.ok) {
+          const contentType = response.headers.get('content-type') || ''
           const blob = await response.blob()
-          // Verify we got actual content (not an error page)
-          if (blob.size > 1000) {
-            console.log('[DOWNLOAD] Success with proxy, blob size:', blob.size)
+          // Verify we got actual image/video content (not an error page)
+          if (blob.size > 5000 && (contentType.includes('image') || contentType.includes('video') || blob.size > 50000)) {
+            console.log('[DOWNLOAD] Success with proxy, blob size:', blob.size, 'type:', contentType)
             return blob
+          } else {
+            console.log('[DOWNLOAD] Proxy returned invalid content, size:', blob.size, 'type:', contentType)
           }
+        } else {
+          console.log('[DOWNLOAD] Proxy returned status:', response.status)
         }
       } catch (e) {
-        console.log('[DOWNLOAD] Proxy failed:', proxyUrl.split('?')[0], e)
+        console.log('[DOWNLOAD] Proxy failed:', proxyUrl.split(/[/?]/)[2])
       }
     }
+    console.log('[DOWNLOAD] All proxies failed for URL:', url.substring(0, 80))
     return null
   }
 
   const downloadMedia = async (mediaItem: MediaData) => {
     setDownloadingIndex(mediaItem.index)
+    setDownloadError(null)
     try {
       const downloadUrl = mediaItem.is_video ? (mediaItem.video_url || mediaItem.url) : mediaItem.url
       const extension = mediaItem.is_video ? 'mp4' : 'jpg'
@@ -941,11 +955,54 @@ export default function Home() {
             return
           }
         } catch (proxyErr) {
-          console.log('Proxy download failed, opening direct URL:', proxyErr)
+          console.log('Proxy download failed:', proxyErr)
         }
 
-        // Fallback: open original URL
-        window.open(downloadUrl, '_blank')
+        // Fallback: Show error with option to copy link
+        setDownloadError('No se pudo descargar. Usa el botón "Copiar Link" abajo.')
+
+        const copyToClipboard = async () => {
+          try {
+            await navigator.clipboard.writeText(downloadUrl)
+            alert('Link copiado! Pégalo en Safari para descargar.')
+          } catch {
+            prompt('Copia este link manualmente:', downloadUrl)
+          }
+        }
+
+        // Open a helpful error page instead of just opening the URL
+        const errorWindow = window.open('', '_blank')
+        if (errorWindow) {
+          errorWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <title>Error de descarga</title>
+              <style>
+                body { margin: 0; padding: 20px; font-family: -apple-system, sans-serif; background: #000; color: #fff; text-align: center; }
+                .error-box { background: #1a1a1a; padding: 20px; border-radius: 16px; margin-top: 20px; }
+                h2 { color: #ff6b6b; }
+                .copy-btn { margin-top: 15px; padding: 15px 30px; background: linear-gradient(45deg, #405DE6, #833AB4, #E1306C); border: none; border-radius: 10px; color: white; font-weight: bold; font-size: 1.1em; }
+                .link { word-break: break-all; font-size: 0.8em; color: #888; margin-top: 15px; padding: 10px; background: #333; border-radius: 8px; }
+              </style>
+            </head>
+            <body>
+              <div class="error-box">
+                <h2>⚠️ No se pudo descargar</h2>
+                <p>Los servidores proxy no están disponibles. Copia el link y ábrelo en Safari:</p>
+                <button class="copy-btn" onclick="navigator.clipboard.writeText('${downloadUrl}').then(() => alert('Link copiado!'))">
+                  📋 Copiar Link
+                </button>
+                <p class="link">${downloadUrl.substring(0, 100)}...</p>
+              </div>
+            </body>
+            </html>
+          `)
+          errorWindow.document.close()
+        } else {
+          await copyToClipboard()
+        }
 
       } else if (isMobile) {
         // Android: try download via multiple proxies
@@ -1217,6 +1274,24 @@ export default function Home() {
         </div>
       )}
 
+      {/* Download Error Message */}
+      {downloadError && (
+        <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800
+                      rounded-xl flex items-start gap-3 text-orange-600 dark:text-orange-400 fade-in">
+          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm md:text-base font-medium">{downloadError}</p>
+            <p className="text-xs mt-1 opacity-80">Los proxies pueden estar temporalmente bloqueados. Intenta de nuevo en unos segundos.</p>
+          </div>
+          <button
+            onClick={() => setDownloadError(null)}
+            className="text-orange-400 hover:text-orange-600"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Results */}
       {result && (
         <div className="fade-in">
@@ -1369,6 +1444,21 @@ export default function Home() {
                     )}
                     {item.is_video ? 'Descargar Video' : 'Descargar Imagen'}
                   </button>
+                  <button
+                    onClick={async () => {
+                      const url = item.is_video ? (item.video_url || item.url) : item.url
+                      try {
+                        await navigator.clipboard.writeText(url)
+                        alert('Link copiado! Pégalo en Safari para ver/guardar.')
+                      } catch {
+                        prompt('Copia este link:', url)
+                      }
+                    }}
+                    className="w-full mt-2 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2
+                              transition-colors bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+                  >
+                    📋 Copiar Link
+                  </button>
                   <p className="text-xs text-center text-gray-500 dark:text-gray-400 mt-2">
                     {item.is_video ? 'MP4' : 'JPG'} • Máxima calidad
                   </p>
@@ -1398,7 +1488,7 @@ export default function Home() {
           Solo funciona con posts públicos
         </p>
         <p className="mt-4 text-xs font-mono bg-gray-200 dark:bg-gray-700 inline-block px-2 py-1 rounded">
-          v1.7.3
+          v1.7.4
         </p>
       </footer>
     </div>
