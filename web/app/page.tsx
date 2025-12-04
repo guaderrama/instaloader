@@ -804,6 +804,44 @@ export default function Home() {
     }
   }
 
+  // Helper function to try multiple CORS proxies
+  const fetchWithProxies = async (url: string): Promise<Blob | null> => {
+    const proxies = [
+      `https://corsproxy.io/?${encodeURIComponent(url)}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+      `https://corsproxy.org/?${encodeURIComponent(url)}`,
+    ]
+
+    for (const proxyUrl of proxies) {
+      try {
+        console.log('[DOWNLOAD] Trying proxy:', proxyUrl.split('?')[0])
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 15000)
+
+        const response = await fetch(proxyUrl, {
+          signal: controller.signal,
+          headers: {
+            'Accept': 'image/*, video/*',
+          }
+        })
+        clearTimeout(timeoutId)
+
+        if (response.ok) {
+          const blob = await response.blob()
+          // Verify we got actual content (not an error page)
+          if (blob.size > 1000) {
+            console.log('[DOWNLOAD] Success with proxy, blob size:', blob.size)
+            return blob
+          }
+        }
+      } catch (e) {
+        console.log('[DOWNLOAD] Proxy failed:', proxyUrl.split('?')[0], e)
+      }
+    }
+    return null
+  }
+
   const downloadMedia = async (mediaItem: MediaData) => {
     setDownloadingIndex(mediaItem.index)
     try {
@@ -811,18 +849,18 @@ export default function Home() {
       const extension = mediaItem.is_video ? 'mp4' : 'jpg'
       const filename = `instagram_${result?.shortcode}_${mediaItem.index + 1}.${extension}`
 
+      console.log('[DOWNLOAD] Starting download for:', downloadUrl.substring(0, 100) + '...')
+
       // For iOS/mobile: try to download via proxy, then open in new tab
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
       const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
 
       if (isIOS) {
         // On iOS, we need to use a workaround
-        // First try to fetch via CORS proxy and create a blob URL
+        // First try to fetch via multiple CORS proxies and create a blob URL
         try {
-          const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(downloadUrl)}`
-          const response = await fetch(proxyUrl)
-          if (response.ok) {
-            const blob = await response.blob()
+          const blob = await fetchWithProxies(downloadUrl)
+          if (blob) {
             const blobUrl = window.URL.createObjectURL(blob)
 
             // Create a temporary link
@@ -910,12 +948,10 @@ export default function Home() {
         window.open(downloadUrl, '_blank')
 
       } else if (isMobile) {
-        // Android: try direct download first
+        // Android: try download via multiple proxies
         try {
-          const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(downloadUrl)}`
-          const response = await fetch(proxyUrl)
-          if (response.ok) {
-            const blob = await response.blob()
+          const blob = await fetchWithProxies(downloadUrl)
+          if (blob) {
             const blobUrl = window.URL.createObjectURL(blob)
 
             const link = document.createElement('a')
@@ -927,40 +963,35 @@ export default function Home() {
             window.URL.revokeObjectURL(blobUrl)
             return
           }
-        } catch {
-          // Fallback to opening in new tab
+        } catch (e) {
+          console.log('[DOWNLOAD] Android download failed:', e)
         }
+        // Fallback to opening in new tab
         window.open(downloadUrl, '_blank')
 
       } else {
-        // Desktop: download directly via proxy
+        // Desktop: download via multiple proxies
         try {
-          const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(downloadUrl)}`
-          const response = await fetch(proxyUrl)
-          const blob = await response.blob()
-          const blobUrl = window.URL.createObjectURL(blob)
+          const blob = await fetchWithProxies(downloadUrl)
+          if (blob) {
+            const blobUrl = window.URL.createObjectURL(blob)
 
-          const link = document.createElement('a')
-          link.href = blobUrl
-          link.download = filename
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-          window.URL.revokeObjectURL(blobUrl)
-        } catch {
-          // Fallback to direct URL
-          const response = await fetch(downloadUrl)
-          const blob = await response.blob()
-          const blobUrl = window.URL.createObjectURL(blob)
-
-          const link = document.createElement('a')
-          link.href = blobUrl
-          link.download = filename
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-          window.URL.revokeObjectURL(blobUrl)
+            const link = document.createElement('a')
+            link.href = blobUrl
+            link.download = filename
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+            window.URL.revokeObjectURL(blobUrl)
+            return
+          }
+        } catch (e) {
+          console.log('[DOWNLOAD] Desktop proxy download failed:', e)
         }
+
+        // Fallback: open in new tab
+        console.log('[DOWNLOAD] All proxies failed, opening in new tab')
+        window.open(downloadUrl, '_blank')
       }
     } catch (err) {
       console.error('Error downloading:', err)
@@ -983,20 +1014,21 @@ export default function Home() {
       // iOS: Open a single page with ALL images for easy saving
       setDownloadingAll(true)
       try {
-        // First, fetch all images via proxy and create blob URLs
+        // First, fetch all images via multiple proxies and create blob URLs
         const blobUrls: string[] = []
         for (const item of result.media) {
           try {
             const downloadUrl = item.is_video ? (item.video_url || item.url) : item.url
-            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(downloadUrl)}`
-            const response = await fetch(proxyUrl)
-            if (response.ok) {
-              const blob = await response.blob()
+            console.log('[DOWNLOAD ALL] Fetching item', item.index + 1)
+            const blob = await fetchWithProxies(downloadUrl)
+            if (blob) {
               blobUrls.push(window.URL.createObjectURL(blob))
             } else {
+              console.log('[DOWNLOAD ALL] All proxies failed for item', item.index + 1)
               blobUrls.push(downloadUrl) // fallback to original URL
             }
-          } catch {
+          } catch (e) {
+            console.log('[DOWNLOAD ALL] Error fetching item', item.index + 1, e)
             blobUrls.push(item.url) // fallback
           }
         }
@@ -1241,11 +1273,14 @@ export default function Home() {
               : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
           }`}>
             {result.media.map((item) => {
-              // Use proxy for thumbnails to bypass CORS
-              const getProxiedUrl = (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`
-              const thumbnailUrl = item.is_video
-                ? (item.thumbnail_url ? getProxiedUrl(item.thumbnail_url) : null)
-                : getProxiedUrl(item.url)
+              // Use rotating proxies for thumbnails to bypass CORS
+              const thumbnailProxies = [
+                `https://corsproxy.io/?${encodeURIComponent(item.is_video ? (item.thumbnail_url || '') : item.url)}`,
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(item.is_video ? (item.thumbnail_url || '') : item.url)}`,
+                `https://corsproxy.org/?${encodeURIComponent(item.is_video ? (item.thumbnail_url || '') : item.url)}`,
+              ]
+              // Use different proxy based on item index for load distribution
+              const thumbnailUrl = (item.is_video && !item.thumbnail_url) ? null : thumbnailProxies[item.index % thumbnailProxies.length]
 
               return (
               <div
@@ -1263,8 +1298,15 @@ export default function Home() {
                           className="w-full h-full object-cover"
                           loading="lazy"
                           onError={(e) => {
-                            // Fallback to gradient if image fails to load
-                            (e.target as HTMLImageElement).style.display = 'none'
+                            const img = e.target as HTMLImageElement
+                            const currentProxy = thumbnailProxies.findIndex(p => img.src.includes(p.split('?')[0].split('//')[1]))
+                            const nextProxy = thumbnailProxies[(currentProxy + 1) % thumbnailProxies.length]
+                            if (currentProxy < thumbnailProxies.length - 1 && nextProxy !== img.src) {
+                              console.log('[THUMBNAIL] Retrying with next proxy for item', item.index + 1)
+                              img.src = nextProxy
+                            } else {
+                              img.style.display = 'none'
+                            }
                           }}
                         />
                       ) : null}
@@ -1290,8 +1332,15 @@ export default function Home() {
                         className="w-full h-full object-cover"
                         loading="lazy"
                         onError={(e) => {
-                          // Hide broken image and show placeholder
-                          (e.target as HTMLImageElement).style.display = 'none'
+                          const img = e.target as HTMLImageElement
+                          const currentProxy = thumbnailProxies.findIndex(p => img.src.includes(p.split('?')[0].split('//')[1]))
+                          const nextProxy = thumbnailProxies[(currentProxy + 1) % thumbnailProxies.length]
+                          if (currentProxy < thumbnailProxies.length - 1 && nextProxy !== img.src) {
+                            console.log('[THUMBNAIL] Retrying with next proxy for item', item.index + 1)
+                            img.src = nextProxy
+                          } else {
+                            img.style.display = 'none'
+                          }
                         }}
                       />
                       {/* Gradient placeholder (always behind) */}
@@ -1349,7 +1398,7 @@ export default function Home() {
           Solo funciona con posts públicos
         </p>
         <p className="mt-4 text-xs font-mono bg-gray-200 dark:bg-gray-700 inline-block px-2 py-1 rounded">
-          v1.7.2
+          v1.7.3
         </p>
       </footer>
     </div>
