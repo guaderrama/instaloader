@@ -1240,7 +1240,14 @@ export default function Home() {
               ? 'grid-cols-1 max-w-lg mx-auto'
               : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
           }`}>
-            {result.media.map((item) => (
+            {result.media.map((item) => {
+              // Use proxy for thumbnails to bypass CORS
+              const getProxiedUrl = (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`
+              const thumbnailUrl = item.is_video
+                ? (item.thumbnail_url ? getProxiedUrl(item.thumbnail_url) : null)
+                : getProxiedUrl(item.url)
+
+              return (
               <div
                 key={item.index}
                 className="image-card bg-white dark:bg-gray-800 rounded-xl md:rounded-2xl overflow-hidden shadow-lg"
@@ -1249,16 +1256,20 @@ export default function Home() {
                   {item.is_video ? (
                     <>
                       {/* Video thumbnail or placeholder */}
-                      {item.thumbnail_url ? (
+                      {thumbnailUrl ? (
                         <img
-                          src={item.thumbnail_url}
+                          src={thumbnailUrl}
                           alt={`Video ${item.index + 1}`}
                           className="w-full h-full object-cover"
                           loading="lazy"
+                          onError={(e) => {
+                            // Fallback to gradient if image fails to load
+                            (e.target as HTMLImageElement).style.display = 'none'
+                          }}
                         />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-purple-500 to-pink-500" />
-                      )}
+                      ) : null}
+                      {/* Gradient placeholder (always behind) */}
+                      <div className="absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500 -z-10" />
                       {/* Play icon overlay */}
                       <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                         <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-white/90 flex items-center justify-center">
@@ -1272,12 +1283,22 @@ export default function Home() {
                       </div>
                     </>
                   ) : (
-                    <img
-                      src={item.url}
-                      alt={`Imagen ${item.index + 1}`}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
+                    <>
+                      <img
+                        src={thumbnailUrl || ''}
+                        alt={`Imagen ${item.index + 1}`}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                        onError={(e) => {
+                          // Hide broken image and show placeholder
+                          (e.target as HTMLImageElement).style.display = 'none'
+                        }}
+                      />
+                      {/* Gradient placeholder (always behind) */}
+                      <div className="absolute inset-0 bg-gradient-to-br from-pink-400 to-purple-500 -z-10 flex items-center justify-center">
+                        <ImageIcon className="w-12 h-12 text-white/50" />
+                      </div>
+                    </>
                   )}
                   {result.media.length > 1 && (
                     <div className="absolute top-3 left-3 bg-black/60 text-white text-sm px-3 py-1 rounded-full">
@@ -1304,7 +1325,7 @@ export default function Home() {
                   </p>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
 
           {/* Mobile tip */}
@@ -1328,7 +1349,7 @@ export default function Home() {
           Solo funciona con posts públicos
         </p>
         <p className="mt-4 text-xs font-mono bg-gray-200 dark:bg-gray-700 inline-block px-2 py-1 rounded">
-          v1.7.1
+          v1.7.2
         </p>
       </footer>
     </div>
