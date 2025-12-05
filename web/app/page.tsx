@@ -807,16 +807,31 @@ export default function Home() {
 
   // Helper function to try multiple CORS proxies
   const fetchWithProxies = async (url: string): Promise<Blob | null> => {
+    // First, try our own server-side proxy (most reliable)
+    try {
+      console.log('[DOWNLOAD] Trying server proxy...')
+      const serverProxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`
+      const response = await fetch(serverProxyUrl)
+
+      if (response.ok) {
+        const blob = await response.blob()
+        if (blob.size > 5000) {
+          console.log('[DOWNLOAD] Server proxy success, size:', blob.size)
+          return blob
+        }
+      } else {
+        console.log('[DOWNLOAD] Server proxy failed with status:', response.status)
+      }
+    } catch (e) {
+      console.log('[DOWNLOAD] Server proxy error:', e)
+    }
+
+    // Fallback to external CORS proxies
     const proxies = [
-      // Primary proxies (most reliable for Instagram)
       `https://corsproxy.io/?${encodeURIComponent(url)}`,
       `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-      // Secondary proxies
       `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
       `https://corsproxy.org/?${encodeURIComponent(url)}`,
-      // Additional fallbacks
-      `https://thingproxy.freeboard.io/fetch/${url}`,
-      `https://cors-anywhere.herokuapp.com/${url}`,
     ]
 
     for (const proxyUrl of proxies) {
@@ -829,7 +844,6 @@ export default function Home() {
           signal: controller.signal,
           headers: {
             'Accept': 'image/*, video/*, */*',
-            'Origin': window.location.origin,
           }
         })
         clearTimeout(timeoutId)
@@ -837,12 +851,11 @@ export default function Home() {
         if (response.ok) {
           const contentType = response.headers.get('content-type') || ''
           const blob = await response.blob()
-          // Verify we got actual image/video content (not an error page)
           if (blob.size > 5000 && (contentType.includes('image') || contentType.includes('video') || blob.size > 50000)) {
-            console.log('[DOWNLOAD] Success with proxy, blob size:', blob.size, 'type:', contentType)
+            console.log('[DOWNLOAD] Proxy success, size:', blob.size, 'type:', contentType)
             return blob
           } else {
-            console.log('[DOWNLOAD] Proxy returned invalid content, size:', blob.size, 'type:', contentType)
+            console.log('[DOWNLOAD] Proxy returned invalid content, size:', blob.size)
           }
         } else {
           console.log('[DOWNLOAD] Proxy returned status:', response.status)
@@ -1488,7 +1501,7 @@ export default function Home() {
           Solo funciona con posts públicos
         </p>
         <p className="mt-4 text-xs font-mono bg-gray-200 dark:bg-gray-700 inline-block px-2 py-1 rounded">
-          v1.7.4
+          v1.7.5
         </p>
       </footer>
     </div>
